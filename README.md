@@ -20,7 +20,7 @@ The following command runs the server:
   
   1) to get plain text of a PDF page - mostly for testing purposes.
 
-  2) to  get summary of PDF pages privided by the user using OpenAI LLM.
+  2) to  get summary of PDF pages provided by the user using OpenAI LLM.
 
   Once tool #2 is selected, further interactions with the server using IBM MCP Context Gateway is as easy as filling up 2 input text fields:
 
