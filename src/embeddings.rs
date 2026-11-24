@@ -7,10 +7,6 @@ use ndarray::{Array1, ArrayView1};
 use std::sync::OnceLock;
 use std::sync::Arc;
 use tiktoken_rs::cl100k_base;
-
-
-pub static OPENAI_CLIENT: OnceLock<OpenAIClient<OpenAIConfig>> = OnceLock::new();
-
 use bincode::{Encode, Decode};
 use serde::{Serialize, Deserialize};
 
@@ -95,7 +91,7 @@ pub async fn generate_embeddings_for_page(
             .build()?; // Propagates OpenAIError
 
         let response = client.embeddings().create(request).await?; // Propagates OpenAIError
-      
+
 
         if response.data.len() != 1 {
             return Err(ServerError::OpenAI(
@@ -114,7 +110,7 @@ pub async fn generate_embeddings_for_page(
                 // Process result
         let embedding_data = response.data.first().unwrap(); // Safe unwrap due to check above
         let embedding_array = Array1::from(embedding_data.embedding.clone());
-            
+
         Ok((embedding_array, token_count)) // Include token count
-   
+
 }

@@ -20,8 +20,8 @@ use rmcp::{
        ProtocolVersion,
         ServerCapabilities,
         ServerInfo,
-    },   
-   
+    },
+
 };
 
 use async_openai::{
@@ -34,18 +34,11 @@ use async_openai::{
 };
 
 use ndarray::Array1;
-use std::{env, sync::Arc}; 
+use std::{env, sync::Arc};
 use tokio::sync::Mutex;
-
 use std::thread;
-
 use std::sync::OnceLock;
-
 use pyo3::prelude::*;
-
-use std::ffi::CStr;
-use std::ffi::CString;
-
 use std::path::{Path,};
 
 
@@ -65,6 +58,15 @@ pub struct PdfPageTexRequest {
 
 }
 
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PdfPageTexRequestByFile {
+    #[schemars(description = "Page number to extract by file")]
+        pub file: String,
+    	pub page_number: u32,
+
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct PdfContentRequest {
     #[schemars(description = "Text query to extract content")]
@@ -76,41 +78,51 @@ pub struct PdfPagesContentRequest {
     #[schemars(description = "Text query to extract content of particular pages")]
     pub query: String,
     pub page_list: String,
-}		
+}
+
+//----------------------------------------------------------------------------------------------------------
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PdfPagesContentRequestByFile {
+    #[schemars(description = "Text query to extract content of particular pages of the file specified")]
+    pub query: String,
+    pub page_list: String,
+    pub file: String,
+}
+//--------------------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
 pub struct PdfMcpServer{
 	tool_router: ToolRouter<Self>,
-    pdf_file_path: Arc<String>, // Use Arc for cheap cloning
+    //pdf_file_path: Arc<String>, // Use Arc for cheap cloning
     embeddings: Vec<(u32, Array1<f32>)>,
     startup_message: Arc<Mutex<Option<String>>>, // Keep the message itself
     startup_message_sent: Arc<Mutex<bool>>,     // Flag to track if sent (using tokio::sync::Mutex)
-                                       
-   
+
+
 }
 
 #[tool_router]
 impl PdfMcpServer {
 
     pub fn new(
-        pdf_file_path: String,
+        //pdf_file_path: String,
         startup_message: String,
 
     ) -> Result<Self, ServerError> {
         Ok(Self {
         	tool_router: Self::tool_router(),
-            pdf_file_path: Arc::new(pdf_file_path),
+            //pdf_file_path: Arc::new(pdf_file_path),
             embeddings: Vec::<(u32, Array1<f32>)>::new(),
             startup_message: Arc::new(Mutex::new(Some(startup_message))), // Initialize message
             startup_message_sent: Arc::new(Mutex::new(false)), // Initialize flag to false
-    
+
         })
     }
 
 
     fn split_by_paragaphs<'a>(&self, pdf_text: &'a str) -> Paragraph<'a>{
-  
-       let paragraphs = Paragraph::new(&pdf_text);  
+
+       let paragraphs = Paragraph::new(&pdf_text);
        paragraphs
     }
 
@@ -120,9 +132,9 @@ impl PdfMcpServer {
    	 for (i, p) in paragraphs.enumerate() {
         println!("Paragraph #{i}: {p}");
        }
-   } 
+   }
 
- 
+
 
 pub fn py_run_pdfminer_all_pages(&self, pdf_file: &str) -> PyResult<String>{
 
@@ -138,9 +150,9 @@ pub fn py_run_pdfminer_all_pages(&self, pdf_file: &str) -> PyResult<String>{
             .getattr("extract_text").unwrap()
             .call1(((pdf_file),
             	"".to_string(),             //password - according to args order in high_level.extract_text()
-            	(pages_num_vector),)).unwrap()   //pages vector 
+            	(pages_num_vector),)).unwrap()   //pages vector
             .extract().unwrap();
-  
+
     });
 
    Ok(pdf_text)
@@ -150,10 +162,10 @@ pub fn py_run_pdfminer_all_pages(&self, pdf_file: &str) -> PyResult<String>{
 
 pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> {
 
-   let mut pages_number: u32 = 0;	
+   let mut pages_number: u32 = 0;
 
    Python::attach(|py| {
-      
+
    	  let miner = PyModule::import(py, "pdfminer.high_level").unwrap();
 
    	  let pdf_generator = miner
@@ -163,15 +175,15 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
       loop{
    	    match pdf_generator.getattr("__next__").unwrap().call0(){
 
-   	    Ok(_)=> {	      
+   	    Ok(_)=> {
    	      pages_number += 1;
-   	     }        
-        Err(_) => break,   
+   	     }
+        Err(_) => break,
    	   }
-   	
-   	} 	  
 
-    });	
+   	}
+
+    });
 
    Ok(pages_number)
 
@@ -186,17 +198,17 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
 
 
     #[tool(description = "Get full text of PDF file")]
-    fn get_pdf_text_of_page(&self, Parameters(PdfPageTexRequest{page_number}): Parameters<PdfPageTexRequest>)  -> String {
+    fn get_pdf_text_of_page(&self, Parameters(PdfPageTexRequestByFile{file, page_number}): Parameters<PdfPageTexRequestByFile>)  -> String {
 
-        let page_text: String = self.get_page_text_py(page_number).unwrap();
+        let page_text: String = self.get_page_text_py(page_number, file).unwrap();
 
         page_text
-     
+
     }
 
     #[tool(description = "Get summary of PDF document pages by page numbers")]
-    async fn get_summary_of_pdf_document_pages(&self, 
-    	  Parameters(PdfPagesContentRequest{query, page_list}): Parameters<PdfPagesContentRequest>)  -> Result<String, McpError>{ 
+    async fn get_summary_of_pdf_document_pages(&self,
+    	  Parameters(PdfPagesContentRequestByFile{query, page_list, file}): Parameters<PdfPagesContentRequestByFile>)  -> Result<String, McpError>{
 
       let CLIENT: OnceLock<OpenAIClient<OpenAIConfig>> = OnceLock::new();
     	  // --- Initialize OpenAI Client (needed for question embedding even if cache hit) ---
@@ -209,64 +221,64 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
 
          CLIENT
           .set(openai_client.clone()) // Clone the client for the OnceCell
-          .expect("Failed to set OpenAI client"); 
+          .expect("Failed to set OpenAI client");
 
         let embedding_model: String = env::var("EMBEDDING_MODEL")
-          .unwrap_or_else(|_| "text-embedding-3-small".to_string());   
+          .unwrap_or_else(|_| "text-embedding-3-small".to_string());
 
     	 let mut embeddings: Vec<(u32, Array1<f32>)> = Vec::<(u32, Array1<f32>)>::new();
 
-         let mut pages_texts: Vec<String> = Vec::<String>::new();  
+         let mut pages_texts: Vec<String> = Vec::<String>::new();
 
-         let mut pages_numbers: Vec<u32> = Vec::<u32>::new(); 
+         let mut pages_numbers: Vec<u32> = Vec::<u32>::new();
 
-         let mut pages: String = "".to_string();
+         let pages: String;
 
          if page_list == "*"{
 
-         	 let total_number_of_pages = self.py_run_pdfminer_get_pages_number(&self.pdf_file_path.to_string());
+         	 let total_number_of_pages = self.py_run_pdfminer_get_pages_number(&file); //arg
              for n in 0..total_number_of_pages.unwrap(){
              	 pages_numbers.push(n);
              }
-            pages = "all".to_string();   
+            pages = "all".to_string();
          } else {
 
          pages = page_list.trim().to_string();
          pages_numbers = pages_argument_to_vector(pages.clone()).unwrap();
 
-         } 
+         }
 
-         let full_embeddings_path = generate_embeddings_path(self.pdf_file_path.to_string(), pages).unwrap();
+         let full_embeddings_path = generate_embeddings_path(file.clone(), pages).unwrap();  //arg
 
          eprintln!("Cache file path: {:?}", full_embeddings_path);
- 
+
 
          if full_embeddings_path.exists(){
            thread::scope(|s| {
               s.spawn(|| {
     	    eprintln!("Attempting to load cached data from: {:?}", full_embeddings_path);
     	    let cached_data = Load_embeddings_from_cache(full_embeddings_path).unwrap();
-     
+
              for item in cached_data {
-     
-               embeddings.push((item.page_num, Array1::from(item.vector.clone())));                      
+
+               embeddings.push((item.page_num, Array1::from(item.vector.clone())));
                eprintln!("Page : {}-------------------------------------------", item.page_num);
                eprintln!("{}", item.content);
-            }                            
-                      
+            }
+
           });
          });
        } else {
-       
+
          eprintln!("Cache file not found. Will generate.");
 
          for p_num in &pages_numbers{
 
-           pages_texts.push(self.get_page_text_py(*p_num).unwrap());   //use Py
+           pages_texts.push(self.get_page_text_py(*p_num, file.clone()).unwrap());   //use Py
         }
 
     eprintln!("Generating embeddings...");
-    
+
     match generate_embeddings(&openai_client, &pages_texts, &embedding_model).await {
     	Ok((generated_embeddings_vector, total_tokens_all)) => {
     		let cost_per_million = 0.02;
@@ -280,8 +292,8 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
 
             let mut combined_cache_data: Vec<CachedDocumentEmbedding> = Vec::new();
 
-            for i in 0..pages_texts.len(){  
-     
+            for i in 0..pages_texts.len(){
+
              combined_cache_data.push(
     	       CachedDocumentEmbedding {
                path: full_embeddings_path.display().to_string(),
@@ -291,7 +303,7 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
               }
             );
 
-             embeddings.push((pages_numbers[i], Array1::from(generated_embeddings_vector[i].clone()))); 
+             embeddings.push((pages_numbers[i], Array1::from(generated_embeddings_vector[i].clone())));
 
            };
 
@@ -309,7 +321,7 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
            	});
     	}
       }
-      
+
 
 
        }
@@ -336,7 +348,7 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
             .build()
             .map_err(|e| {
                 McpError::internal_error(format!("Failed to build embedding request: {}", e), None)
-            })?;    
+            })?;
 
 
          let question_embedding_response = openai_client
@@ -357,8 +369,8 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
         let mut best_page_num: u32 = 0;
 
         for embeddings_array in embeddings.iter(){
-           
-            let score = cosine_similarity(question_vector.view(), embeddings_array.1.view());       
+
+            let score = cosine_similarity(question_vector.view(), embeddings_array.1.view());
             if best_match.is_none() || score > best_match.unwrap(){
             	best_match = Some(score);
                 best_page_num = embeddings_array.0;
@@ -372,14 +384,14 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
             Some(_score) => {
                 eprintln!("Best match found, page number {}", best_page_num);
 
-                let doc = self.get_page_text_py(best_page_num).unwrap(); 
+                let doc = self.get_page_text_py(best_page_num, file.clone()).unwrap();
 
                 let system_prompt = format!(
                         "You are an expert technical assistant for the ????? '{}'. \
                          Answer the user's question based *only* on the provided context. \
                          If the context does not contain the answer, say so. \
                          Do not make up information. Be clear, concise, and comprehensive providing example usage code when possible.",
-                        self.pdf_file_path 
+                         file
                     );
                     let user_prompt = format!(
                         "Context:\n---\n{}\n---\n\nQuestion: {}",
@@ -429,30 +441,30 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
                         .first()
                         .and_then(|choice| choice.message.content.clone())
                         .unwrap_or_else(|| "Error: No response from LLM.".to_string())
-               
+
             }
             None => "Could not find any relevant document context.".to_string(),
-        }; 
+        };
 
 
-         Ok(response_text)        
+         Ok(response_text)
 
-    } 	
+    }
 
 
 
 pub fn set_embeddings(&mut self, embeddings_array: (u32, Array1<f32>)) {
-   
+
     self.embeddings.push(embeddings_array.clone());
-	
-}  
+
+}
 
 
-pub fn get_page_text_py(&self, page_number: u32) -> PyResult<String>{
+pub fn get_page_text_py(&self, page_number: u32, file: String) -> PyResult<String>{
 
    let mut pdf_text: String = String::new();
 
-   let pdf_path = Path::new(&*self.pdf_file_path);
+   let pdf_path = Path::new(&file);
 
      Python::attach(|py| {
         let miner = PyModule::import(py, "pdfminer.high_level").unwrap();
@@ -460,17 +472,15 @@ pub fn get_page_text_py(&self, page_number: u32) -> PyResult<String>{
             .getattr("extract_text").unwrap()
             .call1(((pdf_path),
             	"".to_string(),             //password - according to args order in high_level.extract_text()
-            	(vec![page_number]),)).unwrap()   //pages vector 
+            	(vec![page_number]),)).unwrap()   //pages vector
             .extract().unwrap();
 
-    
-    });
 
+    });
 
      Ok(pdf_text)
 
-    }  
-
+    }
 
   }
 
@@ -491,14 +501,12 @@ impl ServerHandler for PdfMcpServer {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             },
             // Provide instructions based on the specific crate
-            instructions: Some(format!(
-                "This server provides tools to query documentation for PDF file '{}' ",
-                self.pdf_file_path
-            )),
+            instructions: Some(
+                "This server provides tools to query documentation for PDF files".to_string(),
+                //self.pdf_file_path
+            ),
         }
-    }  
-    
-
- }     
+    }
 
 
+ }
