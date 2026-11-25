@@ -3,6 +3,7 @@ use crate::{
     loader::{pages_argument_to_vector, generate_embeddings_path, Load_embeddings_from_cache, store_embeddings_in_cache},
     embeddings::{cosine_similarity, generate_embeddings, CachedDocumentEmbedding},
     error::ServerError, // Keep ServerError for ::new()
+    prompt_logger::log_prompt,
 };
 
 use crate::Paragraph;
@@ -209,6 +210,12 @@ pub fn py_run_pdfminer_get_pages_number(&self, pdf_file: &str) -> PyResult<u32> 
     #[tool(description = "Get summary of PDF document pages by page numbers")]
     async fn get_summary_of_pdf_document_pages(&self,
     	  Parameters(PdfPagesContentRequestByFile{query, page_list, file}): Parameters<PdfPagesContentRequestByFile>)  -> Result<String, McpError>{
+
+      log_prompt(
+          "get_summary_of_pdf_document_pages",
+          &query,
+          &[("file", file.as_str()), ("page_list", page_list.as_str())],
+      );
 
       let CLIENT: OnceLock<OpenAIClient<OpenAIConfig>> = OnceLock::new();
     	  // --- Initialize OpenAI Client (needed for question embedding even if cache hit) ---

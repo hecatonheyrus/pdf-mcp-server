@@ -2,6 +2,7 @@ mod embeddings;
 mod error;
 mod server;
 mod loader;
+mod prompt_logger;
 mod tokenizer;
 
 
@@ -37,6 +38,10 @@ struct Cli {
     #[arg()]
     mode: String, // http/stdio
 
+    /// Log user prompts to ./log/prompts.log (Windows only)
+    #[arg(long, env = "PDF_MCP_LOG_PROMPTS")]
+    log_prompts: bool,
+
 }
 
 const BIND_ADDRESS: &str = "127.0.0.1:8000";
@@ -56,6 +61,10 @@ async fn main() -> Result<(), ServerError> {
     )?;
 
     Python::initialize();
+
+    if let Some(path) = prompt_logger::init(cli.log_prompts) {
+        eprintln!("User prompts are logged to: {:?}", path);
+    }
 
 
     if run_mode == "stdio".to_string(){
