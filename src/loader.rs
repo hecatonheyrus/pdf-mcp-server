@@ -14,6 +14,9 @@ use crate::error::ServerError;
 use crate::embeddings::CachedDocumentEmbedding;
 use bincode::config;
 
+#[cfg(not(target_os = "windows"))]
+use xdg::BaseDirectories;
+
 
 
 fn hash_features(value: String) -> String{

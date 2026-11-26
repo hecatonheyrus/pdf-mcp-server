@@ -30,3 +30,5 @@ tiktoken-rs = "0.7.0"
 tokio = {version = "1.47.1", features = ["macros", "rt-multi-thread","signal"]}
 walkdir = "2.5.0"
 
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+xdg = "2.5"

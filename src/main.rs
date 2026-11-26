@@ -23,9 +23,6 @@ use rmcp::{
     ServiceExt,
 };
 
-#[cfg(not(target_os = "windows"))]
-use xdg::BaseDirectories;
-
 use pyo3::prelude::*;
 
 use crate::tokenizer::Paragraph;
@@ -69,7 +66,7 @@ async fn main() -> Result<(), ServerError> {
 
     if run_mode == "stdio".to_string(){
 
-    eprintln!("PDF MCP server starting via stdio...");
+    eprintln!("PDF MCP server (stdio): waiting for client initialize...");
 
 
     let server_handle = service.serve(stdio()).await.map_err(|e| {
@@ -77,16 +74,16 @@ async fn main() -> Result<(), ServerError> {
         ServerError::McpRuntime(e.to_string())
     })?;
 
-    eprintln!("MCP Server started: parameters stdio, IP address:port N/A");
+    eprintln!("MCP Server started: client connected via stdio");
 
     server_handle.waiting().await.map_err(|e| {
         eprintln!("Server encountered an error while running: {:?}", e);
         ServerError::McpRuntime(e.to_string())
     })?;
 
-    eprintln!("Rust Docs MCP server stopped.");
+    eprintln!("PDF MCP server stopped.");
 
-    } else if run_mode == "https".to_string(){
+    } else if run_mode == "http" || run_mode == "https" {
 
 
     let http_service = StreamableHttpService::new(
@@ -110,7 +107,9 @@ async fn main() -> Result<(), ServerError> {
 
   } else{
 
-    ServerError::Config("Invalid mode argument".to_string());
+    return Err(ServerError::Config(format!(
+        "Invalid mode argument: {run_mode:?} (expected \"stdio\" or \"http\")"
+    )));
 
   }
 
