@@ -77,7 +77,7 @@ async fn main() -> Result<(), ServerError> {
         ServerError::McpRuntime(e.to_string())
     })?;
 
-    eprintln!("PDF MCP server running...");
+    eprintln!("MCP Server started: parameters stdio, IP address:port N/A");
 
     server_handle.waiting().await.map_err(|e| {
         eprintln!("Server encountered an error while running: {:?}", e);
@@ -98,13 +98,15 @@ async fn main() -> Result<(), ServerError> {
     let router = axum::Router::new().nest_service("/mcp", http_service);
     let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
 
-    eprintln!("PDF MCP server starting via HTTP...");
+    let local_addr = tcp_listener.local_addr()?;
+
+    eprintln!("MCP Server started: parameters http, {}", local_addr);
 
     let _ = axum::serve(tcp_listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await;
 
-    eprintln!("PDF MCP server running...");
+    eprintln!("PDF MCP server stopped.");
 
   } else{
 
